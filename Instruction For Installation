@@ -1,0 +1,152 @@
+Lunch T2/T3 Medium instances in AWS with Ubuntu 16.04
+
+
+Change the Host name of Ec2 instance which is going to be Master Node
+# hostnamectl set-hostname K8s-master
+
+Edit the /etc/hosts file and add an entry for newly created hostname i.e; K8s-master
+Run the below command to reflect the changes
+# exec bash
+
+
+************************************
+* Install Docker in Ubuntu machine *
+************************************
+************************************************************************************
+# Install Docker CE
+## Set up the repository:
+### Install packages to allow apt to use a repository over HTTPS
+apt-get update && apt-get install -y \
+  apt-transport-https ca-certificates curl software-properties-common gnupg2
+### Add Docker's official GPG key
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+### Add Docker apt repository.
+add-apt-repository \
+  "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+  $(lsb_release -cs) \
+  stable"
+## Install Docker CE.
+apt-get update && apt-get install -y \
+  containerd.io=1.2.13-1 \
+  docker-ce=5:19.03.8~3-0~ubuntu-$(lsb_release -cs) \
+  docker-ce-cli=5:19.03.8~3-0~ubuntu-$(lsb_release -cs)
+# Setup daemon.
+cat > /etc/docker/daemon.json <<EOF
+{
+  "exec-opts": ["native.cgroupdriver=systemd"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  },
+  "storage-driver": "overlay2"
+}
+EOF
+
+Add the iptables rule to sysctl.conf:
+# echo "net.bridge.bridge-nf-call-iptables=1" | sudo tee -a /etc/sysctl.conf
+Enable iptables immediately:
+# sudo sysctl -p
+mkdir -p /etc/systemd/system/docker.service.d
+# Restart docker.
+systemctl daemon-reload
+systemctl restart docker
+Ref: https://kubernetes.io/docs/setup/production-environment/container-runtimes/#docker
+************************************************************************************
+Or, 
+************************************************************************************
+### Install packages to allow apt to use a repository over HTTPS
+apt-get update && apt-get install -y \
+  apt-transport-https ca-certificates curl software-properties-common gnupg2
+Get the Docker gpg key:
+# curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+Add the Docker repository:
+# sudo add-apt-repository    "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+   $(lsb_release -cs) \
+   stable"
+# add-apt-repository "deb https://download.docker.com/linux/$(. /etc/os-release; echo "$ID") $(lsb_release -cs) stable"
+Update your packages:
+# sudo apt-get update
+Install Docker
+# sudo apt-get install -y docker-ce=18.06.1~ce~3-0~ubuntu
+Or to install latest version
+# sudo apt-get install -y docker-ce containerd.io docker-ce-cli
+Add the iptables rule to sysctl.conf:
+# echo "net.bridge.bridge-nf-call-iptables=1" | sudo tee -a /etc/sysctl.conf
+Enable iptables immediately:
+# sudo sysctl -p
+************************************************************************************
+*******************************************************
+* Install kubeadm, kubelet, kubectl in Ubuntu machine *
+*******************************************************
+************************************************************************************
+sudo apt-get update && sudo apt-get install -y apt-transport-https curl
+Get the Kubernetes gpg key:
+# curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+Add the Kubernetes repository:
+# cat << EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list
+deb https://apt.kubernetes.io/ kubernetes-xenial main
+EOF
+# sudo apt-get update
+# sudo apt-get install -y kubelet kubeadm kubectl
+There is a dependency of specific version of kubeadm, kubelet & kubectl to bootstrap specific version of kubernetes cluster
+the above command will install the latest version of kubeadm, kubelet  kubectl if you want to install specific version then run the below command
+# sudo apt-get install -y kubelet=<version-number> kubeadm=<version-number> kubectl=<version-number>
+# sudo apt-get install -y kubelet=1.15.1-00 kubeadm=1.15.1-00 kubectl=1.15.1-00
+You can check the versions available https://github.com/kubernetes/kubernetes/tags
+Then mark the installed packages to kept hold, thats how th epackages will not be updated during package upgrade.
+# sudo apt-mark hold kubelet kubeadm kubectl
+You can list the packages which kept as hold are,
+# apt-mark showhold
+Ref: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+************************************************************************************
+On Master Node run the below command to bootstrap the Master Node:
+If we are going to use weave CNI then we can use any ip address as pod-network-cidr
+For Calico to work correctly, you need to pass this same CIDR to the kubeadm init command using the --pod-network-cidr=192.168.0.0/16
+For Cilium to work correctly, you must pass --pod-network-cidr=10.217.0.0/16 to kubeadm init.
+For flannel to work correctly, you must pass --pod-network-cidr=10.244.0.0/16 to kubeadm init.
+# kubeadm init --apiserver-advertise-address=<Kubernetes moster node private IP> --apiserver-cert-extra-sans=<Kubernetes moster node publice IP> --pod-network-cidr=<respective network cidr depending upon the CNI going to be used> --kubernetes-version=1.15.1 --token-ttl 0
+Ref: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/create-cluster-kubeadm/
+Your Kubernetes control-plane has initialized successfully!
+To start using your cluster, you need to run the following as a regular user:
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+Then you can join any number of worker nodes by running the following on each as root:
+kubeadm join 172.31.34.248:6443 --token <token> --discovery-token-ca-cert-hash <certificate hash value>
+Please rename the worker nodes as k8s-worker
+Setup Docker repository & Kubernetes repository and then install Docker, kubeadm, kubelet & kubectl with the matching versions installed in Master
+Once all the rquired binaries & services got installed you can run the kubeadm join command
+--token
+By default, kubeadm init automatically generates the token used to initialise each new node. If you would like to manually specify this token, you can use the --token flag. The token must be of the format '<6 character string>.<16 character string>'.
+you can see token value on master node using command:
+# cat /etc/kubernetes/pki/tokens.csv
+The commands used t create token and joining cluster are
+# kubeadm token generate
+# kubeadm token create <generated-token> --print-join-command --ttl=0
+Run this command in the master node to get the token
+# kubeadm token list
+# kubectl -n kube-system get secret clusterinfo -o yaml | grep token-map | awk '{print $2}' | base64 -d | sed "s|{||g;s|}||g;s|:|.|g;s/\"//g;" | xargs echo
+Try to create new as per below command as initial token is valid only 24 hours.
+# kubeadm token create  --ttl=0
+Here ttl=0 means, generated token will never expire.
+Then join node as per below command:
+# kubeadm join <generated_token>
+If you get any error for verifying ca hash, then join as per below:
+# kubeadm join <generated_token> --discovery-token-unsafe-skip-ca-verification
+Once the nodes are joined into the cluster you can verify the status of nodes by running the below command in Master node
+# kubectl get nodes
+If the config file is not copied from /etc/kubernetes folder to ~/.kube folder then you can run the below command
+# kubectl --kubeconfig=/etc/kubernetes/config get nodes
+to permanently add the config file location set the environmnet variable to below one.
+export KUBECONFIG=/etc/kubernetes/config
+
+
+
+#####################################################################################################################################
+
+Ref: https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-token/#cmd-token-create
+Ref: https://stackoverflow.com/questions/40009831/cant-find-kubeadm-token-after-initializing-master
+Ref: https://kubernetes.io/docs/reference/kubectl/cheatsheet/
